@@ -24,13 +24,22 @@ int main() {
   constexpr int N = 100;
   device_vector<double> data(N, 0);
 
-  vector<string> events {"active_warps"};
-  vector<string> metrics {"flop_count_sp"};
+  vector<string> event_names {"active_warps"};
+  vector<string> metric_names {"flop_count_sp"};
 
-  cupti_profiler::profiler profiler(events, metrics);
+  cupti_profiler::profiler profiler(event_names, metric_names);
+
+  // Get #passes required to compute all metrics
   const int passes = profiler.get_passes();
 
+  profiler.start();
   call_kernel(data);
+  profiler.stop();
+
+  profiler.print_event_values();
+
+  /*auto events = profiler.get_event_values();
+  auto metrics = profiler.get_metric_values();*/
 
   thrust::host_vector<double> h_data(data);
 

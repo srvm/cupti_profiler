@@ -1,10 +1,12 @@
 all: demo
 
-INCLUDES = -I ../include
+CUPTI_PATH=/usr/local/cuda/extras/CUPTI
+INCLUDES = -I ../include -I /usr/local/cuda/extras/CUPTI/include
 CXXARGS = -std=c++11 -O3
+LIBS = -lcuda -L$(CUPTI_PATH)/lib64 -lcupti
 
 demo: demo.cu
-	nvcc $(CXXARGS) $(INCLUDES) demo.cu -o demo
+	nvcc $(CXXARGS) $(INCLUDES) $(LIBS) demo.cu -o demo
 
 clean:
 	rm -f *.o demo
