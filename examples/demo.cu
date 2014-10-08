@@ -25,7 +25,7 @@ int main() {
   device_vector<double> data(N, 0);
 
   vector<string> event_names {"active_warps"};
-  vector<string> metric_names {"flop_count_sp"};
+  vector<string> metric_names {"flop_count_dp", "ipc", "sm_efficiency"};
 
   cupti_profiler::profiler profiler(event_names, metric_names);
 
@@ -33,10 +33,13 @@ int main() {
   const int passes = profiler.get_passes();
 
   profiler.start();
-  call_kernel(data);
+  for(int i=0; i<passes; ++i) {
+    call_kernel(data);
+  }
   profiler.stop();
 
   profiler.print_event_values();
+  profiler.print_metric_values();
 
   /*auto events = profiler.get_event_values();
   auto metrics = profiler.get_metric_values();*/
