@@ -19,13 +19,15 @@ void call_kernel(T& arg) {
 
 int main() {
   using namespace std;
-  using namespace thrust;
+  //using namespace thrust;
 
   constexpr int N = 100;
-  device_vector<double> data(N, 0);
+  thrust::device_vector<double> data(N, 0);
 
   vector<string> event_names {"active_warps"};
-  vector<string> metric_names {"flop_count_dp", "ipc", "sm_efficiency"};
+  vector<string> metric_names {"flop_count_dp",
+                               "sm_efficiency",
+                               "branch_efficiency"};
 
   cupti_profiler::profiler profiler(event_names, metric_names);
 
@@ -40,9 +42,6 @@ int main() {
 
   profiler.print_event_values();
   profiler.print_metric_values();
-
-  /*auto events = profiler.get_event_values();
-  auto metrics = profiler.get_metric_values();*/
 
   thrust::host_vector<double> h_data(data);
 

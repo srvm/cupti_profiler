@@ -40,31 +40,30 @@ namespace cupti_profiler {
 namespace detail {
 
   // User data for event collection callback
-  struct metric_data_t {
+  struct pass_data_t {
     // the device where metric is being collected
     CUdevice device;
     // the set of event groups to collect for a pass
-    CUpti_EventGroupSet *eventGroups;
+    CUpti_EventGroupSet *event_groups;
     // the current number of events collected in eventIdArray and
     // eventValueArray
-    uint32_t eventIdx;
+    uint32_t current_event_idx;
     // the number of entries in eventIdArray and eventValueArray
-    uint32_t numEvents;
+    uint32_t num_events;
     // array of event ids
-    CUpti_EventID *eventIdArray;
+    std::vector<CUpti_EventID> event_ids;
     // array of event values
-    uint64_t *eventValueArray;
+    std::vector<uint64_t> event_values;
   };
 
+#if 0
   void CUPTIAPI
   get_value_callback(void *userdata,
                      CUpti_CallbackDomain domain,
                      CUpti_CallbackId cbid,
                      const CUpti_CallbackData *cbInfo) {
-    std::vector<detail::metric_data_t> *metricData_vec =
-      (std::vector<detail::metric_data_t> *)userdata;
-    detail::metric_data_t *metricData = &(*metricData_vec)[0];
-
+    detail::metric_data_t *metric_data = (detail::metric_data_t *)userdata;
+    //const int num_metrics = 1;
     unsigned int i, j, k;
 
     // This callback is enabled only for launch so we shouldn't see
@@ -82,13 +81,15 @@ namespace detail {
       CUPTI_CALL(cuptiSetEventCollectionMode(cbInfo->context,
             CUPTI_EVENT_COLLECTION_MODE_KERNEL));
 
-      for (i = 0; i < metricData->eventGroups->numEventGroups; i++) {
-        uint32_t all = 1;
-        CUPTI_CALL(cuptiEventGroupSetAttribute(metricData->eventGroups->eventGroups[i],
-              CUPTI_EVENT_GROUP_ATTR_PROFILE_ALL_DOMAIN_INSTANCES,
-              sizeof(all), &all));
-        CUPTI_CALL(cuptiEventGroupEnable(metricData->eventGroups->eventGroups[i]));
-      }
+        for (j = 0; j < metric_data->eventGroups->numEventGroups; j++) {
+          uint32_t all = 1;
+          CUPTI_CALL(cuptiEventGroupSetAttribute(
+                metric_data->eventGroups->eventGroups[j],
+                CUPTI_EVENT_GROUP_ATTR_PROFILE_ALL_DOMAIN_INSTANCES,
+                sizeof(all), &all));
+          CUPTI_CALL(cuptiEventGroupEnable(
+                metric_data->eventGroups->eventGroups[j]));
+        }
     }
 
     // on exit, read and record event values
@@ -96,9 +97,9 @@ namespace detail {
       cudaDeviceSynchronize();
 
       // for each group, read the event values from the group and record
-      // in metricData
-      for (i = 0; i < metricData->eventGroups->numEventGroups; i++) {
-        CUpti_EventGroup group = metricData->eventGroups->eventGroups[i];
+      // in metric_data
+      for (i = 0; i < metric_data->eventGroups->numEventGroups; i++) {
+        CUpti_EventGroup group = metric_data->eventGroups->eventGroups[i];
         CUpti_EventDomainID groupDomain;
         uint32_t numEvents, numInstances, numTotalInstances;
         CUpti_EventID *eventIds;
@@ -112,7 +113,7 @@ namespace detail {
         CUPTI_CALL(cuptiEventGroupGetAttribute(group,
               CUPTI_EVENT_GROUP_ATTR_EVENT_DOMAIN_ID,
               &groupDomainSize, &groupDomain));
-        CUPTI_CALL(cuptiDeviceGetEventDomainAttribute(metricData->device, groupDomain,
+        CUPTI_CALL(cuptiDeviceGetEventDomainAttribute(metric_data->device, groupDomain,
               CUPTI_EVENT_DOMAIN_ATTR_TOTAL_INSTANCE_COUNT,
               &numTotalInstancesSize, &numTotalInstances));
         CUPTI_CALL(cuptiEventGroupGetAttribute(group,
@@ -133,9 +134,9 @@ namespace detail {
         for (j = 0; j < numEvents; j++) {
           CUPTI_CALL(cuptiEventGroupReadEvent(group, CUPTI_EVENT_READ_FLAG_NONE,
                 eventIds[j], &valuesSize, values));
-          if (metricData->eventIdx >= metricData->numEvents) {
+          if (metric_data->eventIdx >= metric_data->numEvents) {
             fprintf(stderr, "error: too many events collected, metric expects only %d\n",
-                (int)metricData->numEvents);
+                (int)metric_data->numEvents);
             exit(-1);
           }
 
@@ -148,9 +149,9 @@ namespace detail {
           // domain instances on the device
           normalized = (sum * numTotalInstances) / numInstances;
 
-          metricData->eventIdArray[metricData->eventIdx] = eventIds[j];
-          metricData->eventValueArray[metricData->eventIdx] = normalized;
-          metricData->eventIdx++;
+          metric_data->eventIdArray[metric_data->eventIdx] = eventIds[j];
+          metric_data->eventValueArray[metric_data->eventIdx] = normalized;
+          metric_data->eventIdx++;
 
           // print collected value
           {
@@ -179,8 +180,59 @@ namespace detail {
         free(values);
       }
 
-      for (i = 0; i < metricData->eventGroups->numEventGroups; i++)
-        CUPTI_CALL(cuptiEventGroupDisable(metricData->eventGroups->eventGroups[i]));
+      /*for(int t = 0; t < num_metrics; ++t) {
+        for (i = 0; i < (*metric_vec)[t].eventGroups->numEventGroups; i++)
+          CUPTI_CALL(cuptiEventGroupDisable((*metric_vec)[t].eventGroups->eventGroups[i]));
+      }*/
+    }
+  }
+#endif
+
+  void CUPTIAPI
+  get_value_callback(void *userdata,
+                     CUpti_CallbackDomain domain,
+                     CUpti_CallbackId cbid,
+                     const CUpti_CallbackData *cbInfo) {
+    static int current_pass = 0;
+
+    // This callback is enabled only for launch so we shouldn't see
+    // anything else.
+    if (cbid != CUPTI_RUNTIME_TRACE_CBID_cudaLaunch_v3020) {
+      printf("%s:%d: Unexpected cbid %d\n", __FILE__, __LINE__, cbid);
+      exit(-1);
+    }
+
+    std::vector<detail::pass_data_t> *pass_vector =
+      (std::vector<detail::pass_data_t> *)userdata;
+    detail::pass_data_t *pass_data = &(*pass_vector)[current_pass];
+    if (cbInfo->callbackSite == CUPTI_API_ENTER) {
+      //printf("In Callback: Enter\n");
+      printf("Pass number: %d\n", current_pass);
+      cudaDeviceSynchronize();
+
+      CUPTI_CALL(cuptiSetEventCollectionMode(cbInfo->context,
+            CUPTI_EVENT_COLLECTION_MODE_KERNEL));
+
+      for (int i = 0; i < pass_data->event_groups->numEventGroups; i++) {
+        printf("  Enabling group %d\n", i);
+        uint32_t all = 1;
+        CUPTI_CALL(cuptiEventGroupSetAttribute(
+              pass_data->event_groups->eventGroups[i],
+              CUPTI_EVENT_GROUP_ATTR_PROFILE_ALL_DOMAIN_INSTANCES,
+              sizeof(all), &all));
+        CUPTI_CALL(cuptiEventGroupEnable(
+              pass_data->event_groups->eventGroups[i]));
+      }
+    } else if(cbInfo->callbackSite == CUPTI_API_EXIT) {
+      cudaDeviceSynchronize();
+
+      for (int i = 0; i < pass_data->event_groups->numEventGroups; i++) {
+        printf("  Disabling group %d\n", i);
+        CUPTI_CALL(cuptiEventGroupDisable(
+                   pass_data->event_groups->eventGroups[i]));
+      }
+      ++current_pass;
+      //printf("In Callback: Exit\n");
     }
   }
 
@@ -209,9 +261,7 @@ namespace detail {
         exit(1);
       }
 
-      m_metric_id.reserve(m_num_metrics);
-      m_data.reserve(m_num_metrics);
-      m_pass_data.reserve(m_num_metrics);
+      m_metric_id.resize(m_num_metrics);
 
       DRIVER_API_CALL(cuDeviceGet(&m_device, device_num));
       DRIVER_API_CALL(cuCtxCreate(&m_context, 0, m_device));
@@ -222,6 +272,8 @@ namespace detail {
                  CUPTI_CB_DOMAIN_RUNTIME_API,
                  CUPTI_RUNTIME_TRACE_CBID_cudaLaunch_v3020));
 
+#if 0
+      int passes = 0, max_passes = 0;
       for(int i=0; i < m_num_metrics; ++i) {
         CUPTI_CALL(cuptiMetricGetIdFromName(m_device,
                    m_metric_names[i].c_str(),
@@ -237,10 +289,51 @@ namespace detail {
         m_data[i].eventIdx = 0;
         CUPTI_CALL(cuptiMetricCreateEventGroupSets(m_context,
                    sizeof(m_metric_id[i]), &m_metric_id[i], &m_pass_data[i]));
+        passes = m_pass_data[i]->numSets;
+        m_data[i].eventGroups = m_pass_data[i]->sets + passes - 1;
+        if(passes > max_passes)
+          max_passes = passes;
       }
-      m_passes = m_pass_data[0]->numSets;
-      m_data[0].eventGroups = m_pass_data[0]->sets + m_passes - 1;
+      printf("Max passes: %d\n", max_passes);
+      //m_passes = m_pass_data[0]->numSets;
+      m_passes = max_passes;
       //printf("Max events: %d\n", max_events);
+#endif
+      CUpti_MetricID metric_ids[m_num_metrics];
+      for(int i = 0; i < m_num_metrics; ++i) {
+        CUPTI_CALL(cuptiMetricGetIdFromName(m_device,
+                   m_metric_names[i].c_str(),
+                   &metric_ids[i]));
+      }
+      CUPTI_CALL(cuptiMetricCreateEventGroupSets(m_context,
+                 sizeof(metric_ids), metric_ids, &m_pass_data));
+      m_passes = m_pass_data->numSets;
+      m_data.resize(m_passes);
+
+      int total_events = 0;
+      for(int i = 0; i < m_passes; ++i) {
+        printf("Looking at set (pass) %d\n", i);
+        uint32_t num_events = 0;
+        size_t num_events_size = sizeof(num_events);
+        for(int j = 0; j < m_pass_data->sets[i].numEventGroups; ++j) {
+          CUPTI_CALL(cuptiEventGroupGetAttribute(
+                m_pass_data->sets[i].eventGroups[j],
+                CUPTI_EVENT_GROUP_ATTR_NUM_EVENTS,
+                &num_events_size, &num_events));
+          printf("  Event Group %d, #Events = %d\n", j, num_events);
+          total_events += num_events;
+        }
+        m_data[i].event_groups = m_pass_data->sets + i;
+        m_data[i].device = m_device;
+      }
+      std::copy(metric_ids, metric_ids + m_num_metrics,
+                m_metric_id.begin());
+      /*m_data.eventIdArray = (CUpti_EventID *)malloc(
+                            total_events * sizeof(CUpti_EventID));
+      m_data.eventValueArray = (uint64_t *)malloc(
+                               total_events * sizeof(uint64_t));
+      m_data.eventIdx = 0;
+      m_data.numEvents = total_events;*/
     }
 
     ~profiler() {
@@ -253,31 +346,36 @@ namespace detail {
     }
 
     void stop() {
-      if (m_data[0].eventIdx != m_data[0].numEvents) {
-        fprintf(stderr, "error: expected %u metric events, got %u\n",
-            m_data[0].numEvents, m_data[0].eventIdx);
-        exit(-1);
+      /*for(int i = 0; i < m_num_metrics; ++i) {
+        if (m_data.eventIdx != m_data.numEvents) {
+          fprintf(stderr, "error: expected %u metric events, got %u\n",
+              m_data.numEvents, m_data.eventIdx);
+          exit(-1);
+        }
+        CUpti_MetricValue metric_value;
+
+        CUPTI_CALL(cuptiMetricGetValue(m_device, m_metric_id[i],
+                   m_data.numEvents * sizeof(CUpti_EventID),
+                   m_data.eventIdArray,
+                   m_data.numEvents * sizeof(uint64_t),
+                   m_data.eventValueArray,
+                   0, &metric_value));
+
+        m_metrics.push_back((double)metric_value.metricValueUint64);
       }
-      CUpti_MetricValue metric_value;
-
-      CUPTI_CALL(cuptiMetricGetValue(m_device, m_metric_id[0],
-                 m_data[0].numEvents * sizeof(CUpti_EventID),
-                 m_data[0].eventIdArray,
-                 m_data[0].numEvents * sizeof(uint64_t),
-                 m_data[0].eventValueArray,
-                 0, &metric_value));
-
-      m_metrics.push_back((double)metric_value.metricValueUint64);
-      CUPTI_CALL(cuptiUnsubscribe(m_subscriber));
+      CUPTI_CALL(cuptiUnsubscribe(m_subscriber));*/
     }
 
     void print_event_values() {
     }
 
     void print_metric_values() {
-      printf("metric [%s], value = %lf\n",
-             m_metric_names[0].c_str(),
-             m_metrics[0]);
+      for(int i = 0; i < m_num_metrics; ++i) {
+        printf("metric [%s], value = %lf\n",
+               m_metric_names[i].c_str(),
+               m_metrics[i]);
+      }
+      printf("\n");
     }
 
     val_t get_event_values()
@@ -299,8 +397,8 @@ namespace detail {
     CUcontext m_context;
     CUdevice m_device;
     CUpti_SubscriberHandle m_subscriber;
-    std::vector<detail::metric_data_t> m_data;
-    std::vector<CUpti_EventGroupSets *> m_pass_data;
+    std::vector<detail::pass_data_t> m_data;
+    CUpti_EventGroupSets *m_pass_data;
     std::vector<CUpti_MetricID> m_metric_id;
   };
 
