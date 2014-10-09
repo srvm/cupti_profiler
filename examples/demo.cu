@@ -22,12 +22,12 @@ int main() {
   //using namespace thrust;
 
   constexpr int N = 100;
-  thrust::device_vector<double> data(N, 0);
+  thrust::device_vector<float> data(N, 0);
 
   vector<string> event_names {"active_warps"};
   vector<string> metric_names {"flop_count_dp",
-                               "sm_efficiency",
-                               "branch_efficiency"};
+                               "flop_count_sp",
+                               "inst_executed"};
 
   cupti_profiler::profiler profiler(event_names, metric_names);
 
@@ -43,7 +43,7 @@ int main() {
   profiler.print_event_values();
   profiler.print_metric_values();
 
-  thrust::host_vector<double> h_data(data);
+  thrust::host_vector<float> h_data(data);
 
   for(int i = 0; i < 10; ++i) {
     printf("%lf ", h_data[i]);
