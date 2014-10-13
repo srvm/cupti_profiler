@@ -1,13 +1,13 @@
 # CUPTI CUDA Profiler
 
-This library provides an API to collect CUDA profiling metrics and events
+This library provides an API for collecting CUDA profiling metrics and events
 from within a CUDA application. Programmers specify what metrics and events
 they want, and start the profiler before calling a CUDA kernel. The library
 sets up the appropriate CUPTI callbacks, calculates the number of
 kernel passes required, and gathers values for the specified
 metrics and events, and returns them to the programmer.
 
-**Example:**
+**Example Usage:**
 
 ``` c++
   vector<string> event_names {
