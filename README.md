@@ -23,7 +23,7 @@ metrics and events, and returns them to the programmer.
 
   cupti_profiler::profiler profiler(event_names, metric_names);
 
-  // Get #passes required to compute all metrics
+  // Get #passes required to compute all metrics and events
   const int passes = profiler.get_passes();
 
   profiler.start();
