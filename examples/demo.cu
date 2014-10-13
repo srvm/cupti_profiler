@@ -24,10 +24,17 @@ int main() {
   constexpr int N = 100;
   thrust::device_vector<float> data(N, 0);
 
-  vector<string> event_names {"active_warps"};
-  vector<string> metric_names {"flop_count_dp",
+  vector<string> event_names {
+                              "active_warps",
+                              "gst_inst_32bit",
+                              "active_cycles"
+                             };
+  vector<string> metric_names {
+                               "flop_count_dp",
                                "flop_count_sp",
-                               "inst_executed"};
+                               "inst_executed"
+                               //"stall_memory_throttle"
+                              };
 
   cupti_profiler::profiler profiler(event_names, metric_names);
 
@@ -35,6 +42,7 @@ int main() {
   const int passes = profiler.get_passes();
 
   profiler.start();
+  //int passes = 1;
   for(int i=0; i<passes; ++i) {
     call_kernel(data);
   }
