@@ -44,6 +44,7 @@ namespace detail {
 
   // User data for event collection callback
   struct pass_data_t {
+    int total_passes;
     // the device where metric is being collected
     CUdevice device;
     // the set of event groups to collect for a pass
@@ -75,7 +76,14 @@ namespace detail {
 
     std::vector<detail::pass_data_t> *pass_vector =
       (std::vector<detail::pass_data_t> *)userdata;
-    detail::pass_data_t *pass_data = &(*pass_vector)[current_pass];
+
+    detail::pass_data_t *pass_data = &(*pass_vector)[0];
+    if(current_pass >= pass_data->total_passes)
+      return;
+
+    pass_data = &(*pass_vector)[current_pass];
+
+
     if (cbInfo->callbackSite == CUPTI_API_ENTER) {
       //printf("In Callback: Enter\n");
       printf("Pass number: %d\n", current_pass);
@@ -308,6 +316,8 @@ namespace detail {
         m_data[i].event_groups = m_metric_pass_data->sets + i;
         m_data[i].device = m_device;
         m_data[i].num_events = total_events;
+
+        m_data[i].total_passes = m_metric_passes + m_event_passes;
       }
       std::copy(metric_ids, metric_ids + m_num_metrics,
                 m_metric_id.begin());
@@ -328,6 +338,9 @@ namespace detail {
         m_data[i + m_metric_passes].event_groups = m_event_pass_data->sets + i;
         m_data[i + m_metric_passes].device = m_device;
         m_data[i + m_metric_passes].num_events = total_events;
+
+        m_data[i + m_metric_passes].num_events =
+          m_metric_passes + m_event_passes;
       }
 
       std::copy(event_ids, event_ids + m_num_events,

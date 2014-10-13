@@ -43,7 +43,7 @@ int main() {
 
   profiler.start();
   //int passes = 1;
-  for(int i=0; i<passes; ++i) {
+  for(int i=0; i<100; ++i) {
     call_kernel(data);
   }
   profiler.stop();
