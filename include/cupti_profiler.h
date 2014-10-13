@@ -305,9 +305,6 @@ namespace detail {
           printf("  Event Group %d, #Events = %d\n", j, num_events);
           total_events += num_events;
         }
-        /*m_metric_data[i].event_groups = m_metric_pass_data->sets + i;
-        m_metric_data[i].device = m_device;
-        m_metric_data[i].num_events = total_events;*/
         m_data[i].event_groups = m_metric_pass_data->sets + i;
         m_data[i].device = m_device;
         m_data[i].num_events = total_events;
@@ -328,9 +325,6 @@ namespace detail {
           printf("  Event Group %d, #Events = %d\n", j, num_events);
           total_events += num_events;
         }
-        /*m_event_data[i].event_groups = m_event_pass_data->sets + i;
-        m_event_data[i].device = m_device;
-        m_event_data[i].num_events = total_events;*/
         m_data[i + m_metric_passes].event_groups = m_event_pass_data->sets + i;
         m_data[i + m_metric_passes].device = m_device;
         m_data[i + m_metric_passes].num_events = total_events;
@@ -361,13 +355,6 @@ namespace detail {
 
       int running_sum = 0;
       for(int i = 0; i < m_metric_passes; ++i) {
-        /*std::copy(m_metric_data[i].event_ids.begin(),
-                  m_metric_data[i].event_ids.end(),
-                  event_ids + running_sum);
-        std::copy(m_metric_data[i].event_values.begin(),
-                  m_metric_data[i].event_values.end(),
-                  event_values + running_sum);
-        running_sum += m_metric_data[i].num_events;*/
         std::copy(m_data[i].event_ids.begin(),
                   m_data[i].event_ids.end(),
                   event_ids + running_sum);
@@ -411,7 +398,7 @@ namespace detail {
 
     void print_event_values() {
       for(int i = 0; i < m_num_events; ++i) {
-        printf("Event [%s], value = [%llu]\n",
+        printf("Event [%s] = %llu\n",
                m_event_names[i].c_str(),
                (unsigned long long)m_events[i]);
       }
@@ -447,8 +434,6 @@ namespace detail {
     CUcontext m_context;
     CUdevice m_device;
     CUpti_SubscriberHandle m_subscriber;
-    /*std::vector<detail::pass_data_t> m_metric_data;
-    std::vector<detail::pass_data_t> m_event_data;*/
     std::vector<detail::pass_data_t> m_data;
     CUpti_EventGroupSets *m_metric_pass_data;
     CUpti_EventGroupSets *m_event_pass_data;
