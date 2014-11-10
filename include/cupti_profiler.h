@@ -197,38 +197,46 @@ namespace detail {
     }
   }
 
+  template<typename stream_t>
   void print_metric(const char *name,
                     CUpti_MetricID& id,
-                    CUpti_MetricValue& value) {
+                    CUpti_MetricValue& value,
+                    stream_t& s) {
     CUpti_MetricValueKind value_kind;
     size_t value_kind_sz = sizeof(value_kind);
     CUPTI_CALL(cuptiMetricGetAttribute(id, CUPTI_METRIC_ATTR_VALUE_KIND,
                                        &value_kind_sz, &value_kind));
     switch(value_kind) {
     case CUPTI_METRIC_VALUE_KIND_DOUBLE:
-      printf("Metric [%s] = %f\n", name, value.metricValueDouble);
+      s << value.metricValueDouble;
+      //printf("Metric [%s] = %f\n", name, value.metricValueDouble);
       break;
     case CUPTI_METRIC_VALUE_KIND_UINT64:
-      printf("Metric [%s] = %llu\n", name,
-             (unsigned long long)value.metricValueUint64);
+      s << value.metricValueUint64;
+      /*printf("Metric [%s] = %llu\n", name,
+             (unsigned long long)value.metricValueUint64);*/
       break;
     case CUPTI_METRIC_VALUE_KIND_INT64:
-      printf("Metric [%s] = %lld\n", name,
-             (long long)value.metricValueInt64);
+      s << value.metricValueInt64;
+      /*printf("Metric [%s] = %lld\n", name,
+             (long long)value.metricValueInt64);*/
       break;
     case CUPTI_METRIC_VALUE_KIND_PERCENT:
-      printf("Metric [%s] = %f%%\n", name, value.metricValuePercent);
+      s << value.metricValuePercent;
+      //printf("Metric [%s] = %f%%\n", name, value.metricValuePercent);
       break;
     case CUPTI_METRIC_VALUE_KIND_THROUGHPUT:
-      printf("Metric [%s] = %llu bytes/sec\n", name,
-             (unsigned long long)value.metricValueThroughput);
+      s << value.metricValueThroughput;
+      /*printf("Metric [%s] = %llu bytes/sec\n", name,
+             (unsigned long long)value.metricValueThroughput);*/
       break;
     case CUPTI_METRIC_VALUE_KIND_UTILIZATION_LEVEL:
-      printf("Metric [%s] = utilization level %u\n", name,
-             (unsigned int)value.metricValueUtilizationLevel);
+      s << value.metricValueUtilizationLevel;
+      /*printf("Metric [%s] = utilization level %u\n", name,
+             (unsigned int)value.metricValueUtilizationLevel);*/
       break;
     default:
-      fprintf(stderr, "error: unknown value kind\n");
+      std::cerr << "[error]: unknown value kind\n";
       exit(-1);
     }
   }
@@ -409,23 +417,30 @@ namespace detail {
       CUPTI_CALL(cuptiUnsubscribe(m_subscriber));
     }
 
-    void print_event_values() {
-      for(int i = 0; i < m_num_events; ++i) {
+    template<typename stream>
+    void print_event_values(stream& s) {
+      /*for(int i = 0; i < m_num_events; ++i) {
         printf("Event [%s] = %llu\n",
                m_event_names[i].c_str(),
                (unsigned long long)m_events[i]);
       }
-      printf("\n");
+      printf("\n");*/
+      for(int i=0; i < m_num_events; ++i) {
+        s << (unsigned long long)m_events[i] << " ";
+      }
     }
 
-    void print_metric_values() {
+    template<typename stream>
+    void print_metric_values(stream& s) {
       for(int i = 0; i < m_num_metrics; ++i) {
         detail::print_metric(
                 m_metric_names[i].c_str(),
                 m_metric_id[i],
-                m_metrics[i]);
+                m_metrics[i],
+                s);
+        s << " ";
       }
-      printf("\n");
+      //printf("\n");
     }
 
     event_val_t get_event_values()
