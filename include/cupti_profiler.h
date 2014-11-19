@@ -418,27 +418,38 @@ namespace detail {
     }
 
     template<typename stream>
-    void print_event_values(stream& s) {
+    void print_event_values(stream& s,
+                            bool print_names=false) {
       /*for(int i = 0; i < m_num_events; ++i) {
         printf("Event [%s] = %llu\n",
                m_event_names[i].c_str(),
                (unsigned long long)m_events[i]);
       }
       printf("\n");*/
+      using ull_t = unsigned long long;
+
       for(int i=0; i < m_num_events; ++i) {
-        s << (unsigned long long)m_events[i] << " ";
+        if(print_names)
+          s << "(" << m_event_names[i] << "," << (ull_t)m_events[i] << ") ";
+        else
+          s << (ull_t)m_events[i] << " ";
       }
     }
 
     template<typename stream>
-    void print_metric_values(stream& s) {
+    void print_metric_values(stream& s,
+                             bool print_names=false) {
       for(int i = 0; i < m_num_metrics; ++i) {
+        if(print_names)
+          s << "(" << m_metric_names[i] << ",";
+
         detail::print_metric(
                 m_metric_names[i].c_str(),
                 m_metric_id[i],
                 m_metrics[i],
                 s);
-        s << " ";
+        if(print_names) s << ") ";
+        else s << " ";
       }
       //printf("\n");
     }
