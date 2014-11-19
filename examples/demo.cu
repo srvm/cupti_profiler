@@ -38,6 +38,12 @@ int main() {
 
   cupti_profiler::profiler profiler(event_names, metric_names);
 
+  //cupti_profiler::profiler profiler(vector<string>{}, metric_names);
+
+  // XXX: Disabling all metrics seems to change the values
+  // of some events. Not sure if this is correct behavior.
+  //cupti_profiler::profiler profiler(event_names, vector<string>{});
+
   // Get #passes required to compute all metrics and events
   const int passes = profiler.get_passes();
 
@@ -48,8 +54,8 @@ int main() {
   }
   profiler.stop();
 
-  profiler.print_event_values(std::cout, true);
-  profiler.print_metric_values(std::cout, true);
+  profiler.print_event_values(std::cout);
+  profiler.print_metric_values(std::cout);
 
   thrust::host_vector<float> h_data(data);
 

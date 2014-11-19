@@ -83,10 +83,8 @@ namespace detail {
 
     pass_data = &(*pass_vector)[current_pass];
 
-
     if (cbInfo->callbackSite == CUPTI_API_ENTER) {
       //printf("In Callback: Enter\n");
-      printf("Pass number: %d\n", current_pass);
       cudaDeviceSynchronize();
 
       CUPTI_CALL(cuptiSetEventCollectionMode(cbInfo->context,
@@ -265,7 +263,7 @@ namespace detail {
       DRIVER_API_CALL(cuInit(0));
       DRIVER_API_CALL(cuDeviceGetCount(&device_count));
       if (device_count == 0) {
-        printf("There is no device supporting CUDA.\n");
+        fprintf(stderr, "There is no device supporting CUDA.\n");
         exit(1);
       }
 
@@ -294,18 +292,24 @@ namespace detail {
                    &event_ids[i]));
       }
 
-      CUPTI_CALL(cuptiMetricCreateEventGroupSets(m_context,
-                 sizeof(metric_ids), metric_ids, &m_metric_pass_data));
-      CUPTI_CALL(cuptiEventGroupSetsCreate(m_context,
-                 sizeof(event_ids), event_ids, &m_event_pass_data));
-      m_metric_passes = m_metric_pass_data->numSets;
-      m_event_passes = m_event_pass_data->numSets;
+      if(m_num_metrics > 0) {
+        CUPTI_CALL(cuptiMetricCreateEventGroupSets(m_context,
+                   sizeof(metric_ids), metric_ids, &m_metric_pass_data));
+        m_metric_passes = m_metric_pass_data->numSets;
+      }
+      if(m_num_events > 0) {
+        CUPTI_CALL(cuptiEventGroupSetsCreate(m_context,
+                   sizeof(event_ids), event_ids, &m_event_pass_data));
+        m_event_passes = m_event_pass_data->numSets;
+      }
 
       printf("# Metric Passes: %d\n", m_metric_passes);
       printf("# Event Passes: %d\n", m_event_passes);
 
       /*m_metric_data.resize(m_metric_passes);
       m_event_data.resize(m_event_passes);*/
+
+      assert((m_metric_passes + m_event_passes) > 0);
       m_data.resize(m_metric_passes + m_event_passes);
 
       for(int i = 0; i < m_metric_passes; ++i) {
@@ -327,8 +331,10 @@ namespace detail {
 
         m_data[i].total_passes = m_metric_passes + m_event_passes;
       }
-      std::copy(metric_ids, metric_ids + m_num_metrics,
-                m_metric_id.begin());
+      if(m_num_metrics > 0) {
+        std::copy(metric_ids, metric_ids + m_num_metrics,
+                  m_metric_id.begin());
+      }
 
       for(int i = 0; i < m_event_passes; ++i) {
         int total_events = 0;
@@ -347,12 +353,14 @@ namespace detail {
         m_data[i + m_metric_passes].device = m_device;
         m_data[i + m_metric_passes].num_events = total_events;
 
-        m_data[i + m_metric_passes].num_events =
+        m_data[i + m_metric_passes].total_passes =
           m_metric_passes + m_event_passes;
       }
 
-      std::copy(event_ids, event_ids + m_num_events,
-                m_event_id.begin());
+      if(m_num_events > 0) {
+        std::copy(event_ids, event_ids + m_num_events,
+                  m_event_id.begin());
+      }
     }
 
     ~profiler() {
@@ -384,7 +392,7 @@ namespace detail {
                   event_values + running_sum);
         running_sum += m_data[i].num_events;
       }
-      assert(running_sum == total_events);
+      //assert(running_sum == total_events);
 
       for(int i = 0; i < m_num_metrics; ++i) {
         CUPTI_CALL(cuptiMetricGetValue(m_device, m_metric_id[i],
@@ -419,7 +427,7 @@ namespace detail {
 
     template<typename stream>
     void print_event_values(stream& s,
-                            bool print_names=false) {
+                            bool print_names=true) {
       /*for(int i = 0; i < m_num_events; ++i) {
         printf("Event [%s] = %llu\n",
                m_event_names[i].c_str(),
@@ -427,6 +435,9 @@ namespace detail {
       }
       printf("\n");*/
       using ull_t = unsigned long long;
+
+      if(m_num_events <= 0)
+        return;
 
       for(int i=0; i < m_num_events; ++i) {
         if(print_names)
@@ -438,7 +449,10 @@ namespace detail {
 
     template<typename stream>
     void print_metric_values(stream& s,
-                             bool print_names=false) {
+                             bool print_names=true) {
+      if(m_num_metrics <= 0)
+        return;
+
       for(int i = 0; i < m_num_metrics; ++i) {
         if(print_names)
           s << "(" << m_metric_names[i] << ",";
@@ -454,11 +468,19 @@ namespace detail {
       //printf("\n");
     }
 
-    event_val_t get_event_values()
-    { return m_events; }
+    event_val_t get_event_values() {
+      if(m_num_events > 0)
+        return m_events;
+      else
+        return event_val_t{};
+    }
 
-    metric_val_t get_metric_values()
-    { return m_metrics; }
+    metric_val_t get_metric_values() {
+      if(m_num_metrics > 0)
+        return m_metrics;
+      else
+        return metric_val_t{};
+    }
 
   private:
     int m_device_num;
