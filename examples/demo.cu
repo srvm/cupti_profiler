@@ -48,8 +48,8 @@ int main() {
   }
   profiler.stop();
 
-  profiler.print_event_values();
-  profiler.print_metric_values();
+  profiler.print_event_values(std::cout);
+  profiler.print_metric_values(std::cout);
 
   thrust::host_vector<float> h_data(data);
 
