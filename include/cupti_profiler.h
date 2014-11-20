@@ -39,6 +39,28 @@ do {                                                                           \
     }                                                                   \
   } while (0)
 
+#ifndef NDEBUG
+  template<typename... Args>
+  void _LOG(const char *msg, Args&&... args) {
+    fprintf(stderr, "[Log]: ");
+    fprintf(stderr, msg, args...);
+    fprintf(stderr, "\n");
+  }
+  void _LOG(const char *msg) {
+    fprintf(stderr, "%s\n", msg);
+  }
+  template<typename... Args>
+  void _DBG(const char *msg, Args&&... args) {
+    fprintf(stderr, msg, args...);
+  }
+  void _DBG(const char *msg) {
+    fprintf(stderr, "%s", msg);
+  }
+#else
+  #define _LOG(...)
+  #define _DBG(...)
+#endif
+
 namespace cupti_profiler {
 namespace detail {
 
@@ -70,7 +92,7 @@ namespace detail {
     // This callback is enabled only for launch so we shouldn't see
     // anything else.
     if (cbid != CUPTI_RUNTIME_TRACE_CBID_cudaLaunch_v3020) {
-      printf("%s:%d: Unexpected cbid %d\n", __FILE__, __LINE__, cbid);
+      fprintf(stderr, "%s:%d: Unexpected cbid %d\n", __FILE__, __LINE__, cbid);
       exit(-1);
     }
 
@@ -91,7 +113,7 @@ namespace detail {
             CUPTI_EVENT_COLLECTION_MODE_KERNEL));
 
       for (int i = 0; i < pass_data->event_groups->numEventGroups; i++) {
-        printf("  Enabling group %d\n", i);
+        _LOG("  Enabling group %d", i);
         uint32_t all = 1;
         CUPTI_CALL(cuptiEventGroupSetAttribute(
               pass_data->event_groups->eventGroups[i],
@@ -165,17 +187,17 @@ namespace detail {
             CUPTI_CALL(cuptiEventGetAttribute(eventIds[j], CUPTI_EVENT_ATTR_NAME,
                        &eventNameSize, eventName));
             eventName[127] = '\0';
-            printf("\t%s = %llu (", eventName, (unsigned long long)sum);
+            _DBG("\t%s = %llu (", eventName, (unsigned long long)sum);
             if (numInstances > 1) {
               for (int k = 0; k < numInstances; k++) {
                 if (k != 0)
-                  printf(", ");
-                printf("%llu", (unsigned long long)values[k]);
+                  _DBG(", ");
+                _DBG("%llu", (unsigned long long)values[k]);
               }
             }
 
-            printf(")\n");
-            printf("\t%s (normalized) (%llu * %u) / %u = %llu\n",
+            _DBG(")\n");
+            _LOG("\t%s (normalized) (%llu * %u) / %u = %llu",
                 eventName, (unsigned long long)sum,
                 numTotalInstances, numInstances,
                 (unsigned long long)normalized);
@@ -186,7 +208,7 @@ namespace detail {
       }
 
       for (int i = 0; i < pass_data->event_groups->numEventGroups; i++) {
-        printf("  Disabling group %d\n", i);
+        _LOG("  Disabling group %d", i);
         CUPTI_CALL(cuptiEventGroupDisable(
                    pass_data->event_groups->eventGroups[i]));
       }
@@ -303,8 +325,8 @@ namespace detail {
         m_event_passes = m_event_pass_data->numSets;
       }
 
-      printf("# Metric Passes: %d\n", m_metric_passes);
-      printf("# Event Passes: %d\n", m_event_passes);
+      _LOG("# Metric Passes: %d\n", m_metric_passes);
+      _LOG("# Event Passes: %d\n", m_event_passes);
 
       /*m_metric_data.resize(m_metric_passes);
       m_event_data.resize(m_event_passes);*/
@@ -314,7 +336,7 @@ namespace detail {
 
       for(int i = 0; i < m_metric_passes; ++i) {
         int total_events = 0;
-        printf("[metric] Looking at set (pass) %d\n", i);
+        _LOG("[metric] Looking at set (pass) %d", i);
         uint32_t num_events = 0;
         size_t num_events_size = sizeof(num_events);
         for(int j = 0; j < m_metric_pass_data->sets[i].numEventGroups; ++j) {
@@ -322,7 +344,7 @@ namespace detail {
                 m_metric_pass_data->sets[i].eventGroups[j],
                 CUPTI_EVENT_GROUP_ATTR_NUM_EVENTS,
                 &num_events_size, &num_events));
-          printf("  Event Group %d, #Events = %d\n", j, num_events);
+          _LOG("  Event Group %d, #Events = %d", j, num_events);
           total_events += num_events;
         }
         m_data[i].event_groups = m_metric_pass_data->sets + i;
@@ -338,7 +360,7 @@ namespace detail {
 
       for(int i = 0; i < m_event_passes; ++i) {
         int total_events = 0;
-        printf("[event] Looking at set (pass) %d\n", i);
+        _LOG("[event] Looking at set (pass) %d", i);
         uint32_t num_events = 0;
         size_t num_events_size = sizeof(num_events);
         for(int j = 0; j < m_event_pass_data->sets[i].numEventGroups; ++j) {
@@ -346,7 +368,7 @@ namespace detail {
                 m_event_pass_data->sets[i].eventGroups[j],
                 CUPTI_EVENT_GROUP_ATTR_NUM_EVENTS,
                 &num_events_size, &num_events));
-          printf("  Event Group %d, #Events = %d\n", j, num_events);
+          _LOG("  Event Group %d, #Events = %d", j, num_events);
           total_events += num_events;
         }
         m_data[i + m_metric_passes].event_groups = m_event_pass_data->sets + i;
