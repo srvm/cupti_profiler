@@ -4,6 +4,7 @@
 #include <map>
 #include <string>
 #include <cassert>
+#include <iostream>
 
 #include <cupti.h>
 
