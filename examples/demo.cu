@@ -13,8 +13,20 @@ __global__ void kernel(T begin, int size) {
 }
 
 template<typename T>
+__global__ void kernel2(T begin, int size) {
+  const int thread_id = blockIdx.x * blockDim.x + threadIdx.x;
+  if(thread_id < size)
+    *(begin + thread_id) += 2;
+}
+
+template<typename T>
 void call_kernel(T& arg) {
   kernel<<<1, 100>>>(thrust::raw_pointer_cast(&arg[0]), arg.size());
+}
+
+template<typename T>
+void call_kernel2(T& arg) {
+  kernel2<<<1, 100>>>(thrust::raw_pointer_cast(&arg[0]), arg.size());
 }
 
 int main() {
@@ -46,11 +58,15 @@ int main() {
 
   // Get #passes required to compute all metrics and events
   const int passes = profiler.get_passes();
+  printf("Passes: %d\n", passes);
 
   profiler.start();
   //int passes = 1;
-  for(int i=0; i<100; ++i) {
+  for(int i=0; i<4; ++i) {
     call_kernel(data);
+    cudaDeviceSynchronize();
+    call_kernel2(data);
+    cudaDeviceSynchronize();
   }
   profiler.stop();
 
@@ -61,7 +77,7 @@ int main() {
 
   printf("\n");
   for(int i = 0; i < 10; ++i) {
-    printf("%lf ", h_data[i]);
+    printf("%.2lf ", h_data[i]);
   }
   printf("\n");
   return 0;

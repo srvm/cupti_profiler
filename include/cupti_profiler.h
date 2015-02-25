@@ -83,6 +83,15 @@ namespace detail {
     std::vector<uint64_t> event_values;
   };
 
+  struct kernel_data_t {
+    std::vector<pass_data_t> pass_data;
+    std::string kernel_name;
+    int current_pass;
+
+    CUpti_EventGroupSets *m_metric_pass_data;
+    CUpti_EventGroupSets *m_event_pass_data;
+  };
+
   void CUPTIAPI
   get_value_callback(void *userdata,
                      CUpti_CallbackDomain domain,
@@ -101,14 +110,17 @@ namespace detail {
       (std::vector<detail::pass_data_t> *)userdata;
 
     detail::pass_data_t *pass_data = &(*pass_vector)[0];
+
     if(current_pass >= pass_data->total_passes)
       return;
 
     pass_data = &(*pass_vector)[current_pass];
 
+    const char *current_kernel_name = cbInfo->symbolName;
+
     if (cbInfo->callbackSite == CUPTI_API_ENTER) {
       //printf("In Callback: Enter\n");
-      cudaDeviceSynchronize();
+      //cudaDeviceSynchronize();
 
       CUPTI_CALL(cuptiSetEventCollectionMode(cbInfo->context,
             CUPTI_EVENT_COLLECTION_MODE_KERNEL));
@@ -124,7 +136,10 @@ namespace detail {
               pass_data->event_groups->eventGroups[i]));
       }
     } else if(cbInfo->callbackSite == CUPTI_API_EXIT) {
-      cudaDeviceSynchronize();
+      //cudaDeviceSynchronize();
+
+      //printf("Function Name: %s\n", cbInfo->functionName);
+      //printf("Symbol Name: %s\n", cbInfo->symbolName);
 
       for (int i = 0; i < pass_data->event_groups->numEventGroups; i++) {
         CUpti_EventGroup group = pass_data->event_groups->eventGroups[i];
@@ -271,10 +286,10 @@ namespace detail {
 
     profiler(const strvec_t& events,
              const strvec_t& metrics,
-             const int device_num=0) :
+             const int device_num = 0) :
       m_event_names(events),
       m_metric_names(metrics),
-      m_device_num(0),
+      m_device_num(device_num),
       m_num_metrics(metrics.size()),
       m_num_events(events.size()),
       m_metric_passes(0),
@@ -424,7 +439,7 @@ namespace detail {
                    total_events * sizeof(uint64_t),
                    event_values,
                    0, &metric_value));
-        m_metrics.push_back(metric_value);
+        //m_metrics.push_back(metric_value);
       }
 
       delete[] event_ids;
@@ -442,9 +457,12 @@ namespace detail {
       }
 
       for(int i = 0; i < m_num_events; ++i) {
-        m_events.push_back(event_map[m_event_id[i]]);
+        //m_events.push_back(event_map[m_event_id[i]]);
       }
 
+      CUPTI_CALL(cuptiEnableCallback(0, m_subscriber,
+                 CUPTI_CB_DOMAIN_RUNTIME_API,
+                 CUPTI_RUNTIME_TRACE_CBID_cudaLaunch_v3020));
       CUPTI_CALL(cuptiUnsubscribe(m_subscriber));
     }
 
@@ -462,12 +480,12 @@ namespace detail {
       if(m_num_events <= 0)
         return;
 
-      for(int i=0; i < m_num_events; ++i) {
+      /*for(int i=0; i < m_num_events; ++i) {
         if(print_names)
           s << "(" << m_event_names[i] << "," << (ull_t)m_events[i] << ") ";
         else
           s << (ull_t)m_events[i] << " ";
-      }
+      }*/
     }
 
     template<typename stream>
@@ -480,27 +498,30 @@ namespace detail {
         if(print_names)
           s << "(" << m_metric_names[i] << ",";
 
-        detail::print_metric(
+        /*detail::print_metric(
                 m_metric_names[i].c_str(),
                 m_metric_id[i],
                 m_metrics[i],
-                s);
+                s);*/
         if(print_names) s << ") ";
         else s << " ";
       }
       //printf("\n");
     }
 
-    event_val_t get_event_values() {
+    std::vector<std::string> get_unique_kernel_names()
+    { return m_kernel_names; }
+
+    event_val_t get_event_values(const char *kernel_name) {
       if(m_num_events > 0)
-        return m_events;
+        return m_events[kernel_name];
       else
         return event_val_t{};
     }
 
-    metric_val_t get_metric_values() {
+    metric_val_t get_metric_values(const char *kernel_name) {
       if(m_num_metrics > 0)
-        return m_metrics;
+        return m_metrics[kernel_name];
       else
         return metric_val_t{};
     }
@@ -510,8 +531,8 @@ namespace detail {
     const strvec_t& m_event_names;
     const strvec_t& m_metric_names;
     int m_num_metrics, m_num_events;
-    event_val_t m_events;
-    metric_val_t m_metrics;
+    std::map<std::string, event_val_t> m_events;
+    std::map<std::string, metric_val_t> m_metrics;
 
     int m_metric_passes, m_event_passes;
 
@@ -521,7 +542,11 @@ namespace detail {
     std::vector<detail::pass_data_t> m_data;
     CUpti_EventGroupSets *m_metric_pass_data;
     CUpti_EventGroupSets *m_event_pass_data;
-    std::vector<CUpti_MetricID> m_metric_id; std::vector<CUpti_EventID> m_event_id;
+    std::vector<CUpti_MetricID> m_metric_id;
+    std::vector<CUpti_EventID> m_event_id;
+
+    std::vector<detail::kernel_data_t> m_kernel_data;
+    std::vector<std::string> m_kernel_names;
   };
 
 } // namespace cupti_profiler
