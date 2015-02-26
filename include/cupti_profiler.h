@@ -514,7 +514,7 @@ namespace detail {
                             bool print_names=true) {
       using ull_t = unsigned long long;
 
-      for(auto const &k: m_kernel_data) {
+      for(auto const& k: m_kernel_data) {
         if(k.first == dummy_kernel_name)
           continue;
 
@@ -550,7 +550,7 @@ namespace detail {
       if(m_num_metrics <= 0)
         return;
 
-      for(auto const &k: m_kernel_data) {
+      for(auto const& k: m_kernel_data) {
         if(k.first == dummy_kernel_name)
           continue;
 
@@ -573,8 +573,16 @@ namespace detail {
       }
     }
 
-    std::vector<std::string> get_unique_kernel_names()
-    { return m_kernel_names; }
+    std::vector<std::string> get_kernel_names() {
+      if(m_kernel_names.size() == 0) {
+        for(auto const& k: m_kernel_data) {
+          if(k.first == dummy_kernel_name)
+            continue;
+          m_kernel_names.push_back(k.first);
+        }
+      }
+      return m_kernel_names;
+    }
 
     event_val_t
     get_event_values(const char *kernel_name) {

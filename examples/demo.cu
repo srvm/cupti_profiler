@@ -78,6 +78,11 @@ int main() {
   printf("Metric Trace\n");
   profiler.print_metric_values(std::cout);
 
+  auto names = profiler.get_kernel_names();
+  for(auto name: names) {
+    printf("%s\n", name.c_str());
+  }
+
   thrust::host_vector<float> h_data(data);
 
   /*printf("\n");
