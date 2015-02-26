@@ -26,29 +26,31 @@ void call_kernel(T& arg) {
 
 template<typename T>
 void call_kernel2(T& arg) {
-  kernel2<<<1, 100>>>(thrust::raw_pointer_cast(&arg[0]), arg.size());
+  kernel2<<<1, 50>>>(thrust::raw_pointer_cast(&arg[0]), arg.size());
 }
 
 int main() {
   using namespace std;
   //using namespace thrust;
 
-  constexpr int N = 100;
-  thrust::device_vector<float> data(N, 0);
-
   vector<string> event_names {
                               "active_warps",
                               "gst_inst_32bit",
-                              "active_cycles"
+                              "active_cycles",
+                              "threads_launched",
+                              "branch"
                              };
   vector<string> metric_names {
                                "flop_count_dp",
                                "flop_count_sp",
-                               "inst_executed"
+                               "inst_executed",
+                               "gst_transactions",
+                               "gld_transactions"
                                //"stall_memory_throttle"
                               };
 
-  cupti_profiler::profiler profiler(event_names, metric_names);
+  constexpr int N = 100;
+  thrust::device_vector<float> data(N, 0);
 
   //cupti_profiler::profiler profiler(vector<string>{}, metric_names);
 
@@ -56,13 +58,13 @@ int main() {
   // of some events. Not sure if this is correct behavior.
   //cupti_profiler::profiler profiler(event_names, vector<string>{});
 
+  cupti_profiler::profiler profiler(event_names, metric_names);
   // Get #passes required to compute all metrics and events
   const int passes = profiler.get_passes();
   printf("Passes: %d\n", passes);
 
   profiler.start();
-  //int passes = 1;
-  for(int i=0; i<4; ++i) {
+  for(int i=0; i<50; ++i) {
     call_kernel(data);
     cudaDeviceSynchronize();
     call_kernel2(data);
@@ -70,15 +72,17 @@ int main() {
   }
   profiler.stop();
 
+  printf("Event Trace\n");
   profiler.print_event_values(std::cout);
+  printf("Metric Trace\n");
   profiler.print_metric_values(std::cout);
 
   thrust::host_vector<float> h_data(data);
 
-  printf("\n");
+  /*printf("\n");
   for(int i = 0; i < 10; ++i) {
     printf("%.2lf ", h_data[i]);
-  }
+  }*/
   printf("\n");
   return 0;
 }

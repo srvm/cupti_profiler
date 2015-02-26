@@ -48,7 +48,7 @@ do {                                                                           \
     fprintf(stderr, "\n");
   }
   void _LOG(const char *msg) {
-    fprintf(stderr, "%s\n", msg);
+    fprintf(stderr, "[Log]: %s\n", msg);
   }
   template<typename... Args>
   void _DBG(const char *msg, Args&&... args) {
@@ -63,13 +63,15 @@ do {                                                                           \
 #endif
 
 namespace cupti_profiler {
+  static const char *dummy_kernel_name = "^^ DUMMY ^^";
+
 namespace detail {
 
   // User data for event collection callback
   struct pass_data_t {
-    int total_passes;
+    //int total_passes;
     // the device where metric is being collected
-    CUdevice device;
+    //CUdevice device;
     // the set of event groups to collect for a pass
     CUpti_EventGroupSet *event_groups;
     // the current number of events collected in eventIdArray and
@@ -84,12 +86,22 @@ namespace detail {
   };
 
   struct kernel_data_t {
-    std::vector<pass_data_t> pass_data;
-    std::string kernel_name;
-    int current_pass;
+    typedef std::vector<uint64_t> event_val_t;
+    typedef std::vector<CUpti_MetricValue> metric_val_t;
 
-    CUpti_EventGroupSets *m_metric_pass_data;
-    CUpti_EventGroupSets *m_event_pass_data;
+    kernel_data_t() : m_current_pass(0) {}
+
+    std::vector<pass_data_t> m_pass_data;
+    std::string m_name;
+    int m_metric_passes;
+    int m_event_passes;
+    int m_current_pass;
+    int m_total_passes;
+    CUdevice m_device;
+
+    event_val_t m_event_values;
+    metric_val_t m_metric_values;
+
   };
 
   void CUPTIAPI
@@ -97,7 +109,6 @@ namespace detail {
                      CUpti_CallbackDomain domain,
                      CUpti_CallbackId cbid,
                      const CUpti_CallbackData *cbInfo) {
-    static int current_pass = 0;
 
     // This callback is enabled only for launch so we shouldn't see
     // anything else.
@@ -106,43 +117,98 @@ namespace detail {
       exit(-1);
     }
 
-    std::vector<detail::pass_data_t> *pass_vector =
-      (std::vector<detail::pass_data_t> *)userdata;
-
-    detail::pass_data_t *pass_data = &(*pass_vector)[0];
-
-    if(current_pass >= pass_data->total_passes)
-      return;
-
-    pass_data = &(*pass_vector)[current_pass];
-
     const char *current_kernel_name = cbInfo->symbolName;
 
+    // Skip execution if kernel name is NULL string
+    if(!current_kernel_name) {
+      _LOG("Empty kernel name string. Skipping...");
+      return;
+    }
+
+    std::map<std::string, detail::kernel_data_t> *kernel_data =
+      (std::map<std::string, detail::kernel_data_t> *)userdata;
+
     if (cbInfo->callbackSite == CUPTI_API_ENTER) {
-      //printf("In Callback: Enter\n");
-      //cudaDeviceSynchronize();
+      if(kernel_data->count(current_kernel_name) == 0) {
+        _LOG("New kernel encountered: %s", current_kernel_name);
 
-      CUPTI_CALL(cuptiSetEventCollectionMode(cbInfo->context,
-            CUPTI_EVENT_COLLECTION_MODE_KERNEL));
+        detail::kernel_data_t dummy =
+          (*kernel_data)[dummy_kernel_name];
+        detail::kernel_data_t k_data = dummy;
 
-      for (int i = 0; i < pass_data->event_groups->numEventGroups; i++) {
-        _LOG("  Enabling group %d", i);
-        uint32_t all = 1;
-        CUPTI_CALL(cuptiEventGroupSetAttribute(
-              pass_data->event_groups->eventGroups[i],
-              CUPTI_EVENT_GROUP_ATTR_PROFILE_ALL_DOMAIN_INSTANCES,
-              sizeof(all), &all));
-        CUPTI_CALL(cuptiEventGroupEnable(
-              pass_data->event_groups->eventGroups[i]));
+        k_data.m_name = current_kernel_name;
+
+        auto& pass_data = k_data.m_pass_data;
+        /*for(int i = 0; i < dummy.m_metric_passes; ++i) {
+          pass_data[i].event_groups = dummy.m_pass_data[i].event_groups;
+          pass_data[i].device = dummy.m_pass_data[i].device;
+          pass_data[i].num_events = dummy.m_pass_data[i].num_events;
+          pass_data[i].total_passes = dummy.m_pass_data[i].total_passes;
+        }
+
+        for(int i = 0; i < dummy.m_event_passes; ++i) {
+          pass_data[i + dummy.m_metric_passes].event_groups =
+            dummy.m_pass_data[i + dummy.m_metric_passes].event_groups;
+          pass_data[i + dummy.m_metric_passes].device =
+            dummy.m_pass_data[i + dummy.m_metric_passes].device;
+          pass_data[i + dummy.m_metric_passes].num_events =
+            dummy.m_pass_data[i + dummy.m_metric_passes].num_events;
+          pass_data[i + dummy.m_metric_passes].total_passes =
+            dummy.m_pass_data[i + dummy.m_metric_passes].total_passes;
+        }*/
+
+        CUPTI_CALL(cuptiSetEventCollectionMode(cbInfo->context,
+                   CUPTI_EVENT_COLLECTION_MODE_KERNEL));
+
+        for (int i = 0; i < pass_data[0].event_groups->numEventGroups; i++) {
+          _LOG("  Enabling group %d", i);
+          uint32_t all = 1;
+          CUPTI_CALL(cuptiEventGroupSetAttribute(
+                pass_data[0].event_groups->eventGroups[i],
+                CUPTI_EVENT_GROUP_ATTR_PROFILE_ALL_DOMAIN_INSTANCES,
+                sizeof(all), &all));
+          CUPTI_CALL(cuptiEventGroupEnable(
+                pass_data[0].event_groups->eventGroups[i]));
+
+          (*kernel_data)[current_kernel_name] = k_data;
+        }
+      } else {
+        auto& current_kernel = (*kernel_data)[current_kernel_name];
+        auto const& pass_data = current_kernel.m_pass_data;
+
+        int current_pass = current_kernel.m_current_pass;
+        if(current_pass >= current_kernel.m_total_passes)
+          return;
+
+        _LOG("Current pass for %s: %d", current_kernel_name, current_pass);
+
+        CUPTI_CALL(cuptiSetEventCollectionMode(cbInfo->context,
+              CUPTI_EVENT_COLLECTION_MODE_KERNEL));
+
+        for (int i = 0; i < pass_data[current_pass].event_groups->numEventGroups; i++) {
+          _LOG("  Enabling group %d", i);
+          uint32_t all = 1;
+          CUPTI_CALL(cuptiEventGroupSetAttribute(
+                pass_data[current_pass].event_groups->eventGroups[i],
+                CUPTI_EVENT_GROUP_ATTR_PROFILE_ALL_DOMAIN_INSTANCES,
+                sizeof(all), &all));
+          CUPTI_CALL(cuptiEventGroupEnable(
+                pass_data[current_pass].event_groups->eventGroups[i]));
+
+        }
       }
     } else if(cbInfo->callbackSite == CUPTI_API_EXIT) {
-      //cudaDeviceSynchronize();
+      auto& current_kernel = (*kernel_data)[current_kernel_name];
+      int current_pass = current_kernel.m_current_pass;
 
-      //printf("Function Name: %s\n", cbInfo->functionName);
-      //printf("Symbol Name: %s\n", cbInfo->symbolName);
+      if(current_pass >= current_kernel.m_total_passes)
+        return;
 
-      for (int i = 0; i < pass_data->event_groups->numEventGroups; i++) {
-        CUpti_EventGroup group = pass_data->event_groups->eventGroups[i];
+      auto& pass_data =
+        current_kernel.m_pass_data[current_pass];
+
+      for (int i = 0; i < pass_data.event_groups->numEventGroups; i++) {
+        CUpti_EventGroup group = pass_data.event_groups->eventGroups[i];
         CUpti_EventDomainID group_domain;
         uint32_t numEvents, numInstances, numTotalInstances;
         CUpti_EventID *eventIds;
@@ -157,7 +223,7 @@ namespace detail {
               CUPTI_EVENT_GROUP_ATTR_EVENT_DOMAIN_ID,
               &groupDomainSize, &group_domain));
         CUPTI_CALL(cuptiDeviceGetEventDomainAttribute(
-              pass_data->device, group_domain,
+              current_kernel.m_device, group_domain,
               CUPTI_EVENT_DOMAIN_ATTR_TOTAL_INSTANCE_COUNT,
               &numTotalInstancesSize, &numTotalInstances));
         CUPTI_CALL(cuptiEventGroupGetAttribute(group,
@@ -193,8 +259,8 @@ namespace detail {
           // domain instances on the device
           normalized = (sum * numTotalInstances) / numInstances;
 
-          pass_data->event_ids.push_back(eventIds[j]);
-          pass_data->event_values.push_back(normalized);
+          pass_data.event_ids.push_back(eventIds[j]);
+          pass_data.event_values.push_back(normalized);
 
           // print collected value
           {
@@ -219,23 +285,22 @@ namespace detail {
                 (unsigned long long)normalized);
           }
         }
-
         free(values);
       }
 
-      for (int i = 0; i < pass_data->event_groups->numEventGroups; i++) {
+      for (int i = 0;
+           i < pass_data.event_groups->numEventGroups;
+           i++) {
         _LOG("  Disabling group %d", i);
         CUPTI_CALL(cuptiEventGroupDisable(
-                   pass_data->event_groups->eventGroups[i]));
+                   pass_data.event_groups->eventGroups[i]));
       }
-      ++current_pass;
-      //printf("In Callback: Exit\n");
+      ++(*kernel_data)[current_kernel_name].m_current_pass;
     }
   }
 
   template<typename stream_t>
-  void print_metric(const char *name,
-                    CUpti_MetricID& id,
+  void print_metric(CUpti_MetricID& id,
                     CUpti_MetricValue& value,
                     stream_t& s) {
     CUpti_MetricValueKind value_kind;
@@ -245,31 +310,21 @@ namespace detail {
     switch(value_kind) {
     case CUPTI_METRIC_VALUE_KIND_DOUBLE:
       s << value.metricValueDouble;
-      //printf("Metric [%s] = %f\n", name, value.metricValueDouble);
       break;
     case CUPTI_METRIC_VALUE_KIND_UINT64:
       s << value.metricValueUint64;
-      /*printf("Metric [%s] = %llu\n", name,
-             (unsigned long long)value.metricValueUint64);*/
       break;
     case CUPTI_METRIC_VALUE_KIND_INT64:
       s << value.metricValueInt64;
-      /*printf("Metric [%s] = %lld\n", name,
-             (long long)value.metricValueInt64);*/
       break;
     case CUPTI_METRIC_VALUE_KIND_PERCENT:
       s << value.metricValuePercent;
-      //printf("Metric [%s] = %f%%\n", name, value.metricValuePercent);
       break;
     case CUPTI_METRIC_VALUE_KIND_THROUGHPUT:
       s << value.metricValueThroughput;
-      /*printf("Metric [%s] = %llu bytes/sec\n", name,
-             (unsigned long long)value.metricValueThroughput);*/
       break;
     case CUPTI_METRIC_VALUE_KIND_UTILIZATION_LEVEL:
       s << value.metricValueUtilizationLevel;
-      /*printf("Metric [%s] = utilization level %u\n", name,
-             (unsigned int)value.metricValueUtilizationLevel);*/
       break;
     default:
       std::cerr << "[error]: unknown value kind\n";
@@ -281,8 +336,8 @@ namespace detail {
 
   struct profiler {
     typedef std::vector<std::string> strvec_t;
-    typedef std::vector<uint64_t> event_val_t;
-    typedef std::vector<CUpti_MetricValue> metric_val_t;
+    using event_val_t = detail::kernel_data_t::event_val_t;
+    using metric_val_t = detail::kernel_data_t::metric_val_t;
 
     profiler(const strvec_t& events,
              const strvec_t& metrics,
@@ -305,14 +360,14 @@ namespace detail {
         exit(1);
       }
 
-      m_metric_id.resize(m_num_metrics);
-      m_event_id.resize(m_num_events);
+      m_metric_ids.resize(m_num_metrics);
+      m_event_ids.resize(m_num_events);
 
       DRIVER_API_CALL(cuDeviceGet(&m_device, device_num));
       DRIVER_API_CALL(cuCtxCreate(&m_context, 0, m_device));
       CUPTI_CALL(cuptiSubscribe(&m_subscriber,
                  (CUpti_CallbackFunc)detail::get_value_callback,
-                 &m_data));
+                 &m_kernel_data));
       CUPTI_CALL(cuptiEnableCallback(1, m_subscriber,
                  CUPTI_CB_DOMAIN_RUNTIME_API,
                  CUPTI_RUNTIME_TRACE_CBID_cudaLaunch_v3020));
@@ -332,24 +387,37 @@ namespace detail {
 
       if(m_num_metrics > 0) {
         CUPTI_CALL(cuptiMetricCreateEventGroupSets(m_context,
-                   sizeof(metric_ids), metric_ids, &m_metric_pass_data));
+                   sizeof(metric_ids), metric_ids,
+                   &m_metric_pass_data));
         m_metric_passes = m_metric_pass_data->numSets;
+
+        std::copy(metric_ids, metric_ids + m_num_metrics,
+                  m_metric_ids.begin());
       }
       if(m_num_events > 0) {
         CUPTI_CALL(cuptiEventGroupSetsCreate(m_context,
-                   sizeof(event_ids), event_ids, &m_event_pass_data));
+                   sizeof(event_ids), event_ids,
+                   &m_event_pass_data));
         m_event_passes = m_event_pass_data->numSets;
+
+        std::copy(event_ids, event_ids + m_num_events,
+                  m_event_ids.begin());
       }
 
       _LOG("# Metric Passes: %d\n", m_metric_passes);
       _LOG("# Event Passes: %d\n", m_event_passes);
 
-      /*m_metric_data.resize(m_metric_passes);
-      m_event_data.resize(m_event_passes);*/
-
       assert((m_metric_passes + m_event_passes) > 0);
-      m_data.resize(m_metric_passes + m_event_passes);
 
+      detail::kernel_data_t dummy_data;
+      dummy_data.m_name = dummy_kernel_name;
+      dummy_data.m_metric_passes = m_metric_passes;
+      dummy_data.m_event_passes = m_event_passes;
+      dummy_data.m_device = m_device;
+      dummy_data.m_total_passes = m_metric_passes + m_event_passes;
+      dummy_data.m_pass_data.resize(m_metric_passes + m_event_passes);
+
+      auto& pass_data = dummy_data.m_pass_data;
       for(int i = 0; i < m_metric_passes; ++i) {
         int total_events = 0;
         _LOG("[metric] Looking at set (pass) %d", i);
@@ -363,15 +431,11 @@ namespace detail {
           _LOG("  Event Group %d, #Events = %d", j, num_events);
           total_events += num_events;
         }
-        m_data[i].event_groups = m_metric_pass_data->sets + i;
-        m_data[i].device = m_device;
-        m_data[i].num_events = total_events;
+        pass_data[i].event_groups = m_metric_pass_data->sets + i;
+        //pass_data[i].device = m_device;
+        pass_data[i].num_events = total_events;
 
-        m_data[i].total_passes = m_metric_passes + m_event_passes;
-      }
-      if(m_num_metrics > 0) {
-        std::copy(metric_ids, metric_ids + m_num_metrics,
-                  m_metric_id.begin());
+        //pass_data[i].total_passes = m_metric_passes + m_event_passes;
       }
 
       for(int i = 0; i < m_event_passes; ++i) {
@@ -387,18 +451,15 @@ namespace detail {
           _LOG("  Event Group %d, #Events = %d", j, num_events);
           total_events += num_events;
         }
-        m_data[i + m_metric_passes].event_groups = m_event_pass_data->sets + i;
-        m_data[i + m_metric_passes].device = m_device;
-        m_data[i + m_metric_passes].num_events = total_events;
+        pass_data[i + m_metric_passes].event_groups = m_event_pass_data->sets + i;
+        //pass_data[i + m_metric_passes].device = m_device;
+        pass_data[i + m_metric_passes].num_events = total_events;
 
-        m_data[i + m_metric_passes].total_passes =
-          m_metric_passes + m_event_passes;
+        /*pass_data[i + m_metric_passes].total_passes =
+          m_metric_passes + m_event_passes;*/
       }
 
-      if(m_num_events > 0) {
-        std::copy(event_ids, event_ids + m_num_events,
-                  m_event_id.begin());
-      }
+      m_kernel_data[dummy_kernel_name] = dummy_data;
     }
 
     ~profiler() {
@@ -411,53 +472,60 @@ namespace detail {
     }
 
     void stop() {
-      int total_events = 0;
-      for(int i = 0; i < m_metric_passes; ++i) {
-        //total_events += m_metric_data[i].num_events;
-        total_events += m_data[i].num_events;
-      }
-      CUpti_MetricValue metric_value;
-      CUpti_EventID *event_ids = new CUpti_EventID[total_events];
-      uint64_t *event_values = new uint64_t[total_events];
+      for(auto &k: m_kernel_data) {
+        auto& data = k.second.m_pass_data;
 
-      int running_sum = 0;
-      for(int i = 0; i < m_metric_passes; ++i) {
-        std::copy(m_data[i].event_ids.begin(),
-                  m_data[i].event_ids.end(),
-                  event_ids + running_sum);
-        std::copy(m_data[i].event_values.begin(),
-                  m_data[i].event_values.end(),
-                  event_values + running_sum);
-        running_sum += m_data[i].num_events;
-      }
-      //assert(running_sum == total_events);
+        if(k.first == dummy_kernel_name)
+          continue;
 
-      for(int i = 0; i < m_num_metrics; ++i) {
-        CUPTI_CALL(cuptiMetricGetValue(m_device, m_metric_id[i],
-                   total_events * sizeof(CUpti_EventID),
-                   event_ids,
-                   total_events * sizeof(uint64_t),
-                   event_values,
-                   0, &metric_value));
-        //m_metrics.push_back(metric_value);
-      }
-
-      delete[] event_ids;
-      delete[] event_values;
-
-      std::map<CUpti_EventID, uint64_t> event_map;
-
-      for(int i = m_metric_passes;
-          i < (m_metric_passes + m_event_passes);
-          ++i) {
-        for(int j = 0; j < m_data[i].num_events; ++j) {
-          event_map[m_data[i].event_ids[j]] =
-            m_data[i].event_values[j];
+        int total_events = 0;
+        for(int i = 0; i < m_metric_passes; ++i) {
+          //total_events += m_metric_data[i].num_events;
+          total_events += data[i].num_events;
         }
-      }
+        CUpti_MetricValue metric_value;
+        CUpti_EventID *event_ids = new CUpti_EventID[total_events];
+        uint64_t *event_values = new uint64_t[total_events];
 
-      for(int i = 0; i < m_num_events; ++i) {
-        //m_events.push_back(event_map[m_event_id[i]]);
+        int running_sum = 0;
+        for(int i = 0; i < m_metric_passes; ++i) {
+          std::copy(data[i].event_ids.begin(),
+                    data[i].event_ids.end(),
+                    event_ids + running_sum);
+          std::copy(data[i].event_values.begin(),
+                    data[i].event_values.end(),
+                    event_values + running_sum);
+          running_sum += data[i].num_events;
+        }
+
+        for(int i = 0; i < m_num_metrics; ++i) {
+          CUPTI_CALL(cuptiMetricGetValue(m_device,
+                     m_metric_ids[i],
+                     total_events * sizeof(CUpti_EventID),
+                     event_ids,
+                     total_events * sizeof(uint64_t),
+                     event_values,
+                     0, &metric_value));
+          k.second.m_metric_values.push_back(metric_value);
+        }
+
+        delete[] event_ids;
+        delete[] event_values;
+
+        std::map<CUpti_EventID, uint64_t> event_map;
+        for(int i = m_metric_passes;
+            i < (m_metric_passes + m_event_passes);
+            ++i) {
+          for(int j = 0; j < data[i].num_events; ++j) {
+            event_map[data[i].event_ids[j]] =
+              data[i].event_values[j];
+          }
+        }
+
+        for(int i = 0; i < m_num_events; ++i) {
+          k.second.m_event_values.push_back(
+              event_map[m_event_ids[i]]);
+        }
       }
 
       CUPTI_CALL(cuptiEnableCallback(0, m_subscriber,
@@ -469,23 +537,36 @@ namespace detail {
     template<typename stream>
     void print_event_values(stream& s,
                             bool print_names=true) {
-      /*for(int i = 0; i < m_num_events; ++i) {
-        printf("Event [%s] = %llu\n",
-               m_event_names[i].c_str(),
-               (unsigned long long)m_events[i]);
-      }
-      printf("\n");*/
       using ull_t = unsigned long long;
 
-      if(m_num_events <= 0)
-        return;
+      for(auto const &k: m_kernel_data) {
+        if(k.first == dummy_kernel_name)
+          continue;
 
-      /*for(int i=0; i < m_num_events; ++i) {
-        if(print_names)
-          s << "(" << m_event_names[i] << "," << (ull_t)m_events[i] << ") ";
-        else
-          s << (ull_t)m_events[i] << " ";
-      }*/
+        printf("%s: ",
+               m_kernel_data[k.first].m_name.c_str());
+
+        /*for(int i = 0; i < m_num_events; ++i) {
+          printf("Event [%s] = %llu\n",
+              m_event_names[i].c_str(),
+              (ull_t)m_kernel_data[k.first].m_event_values[i]);
+        }
+        printf("\n");*/
+
+        if(m_num_events <= 0)
+          return;
+
+        for(int i = 0; i < m_num_events; ++i) {
+          if(print_names)
+            s << "(" << m_event_names[i] << ","
+              << (ull_t)m_kernel_data[k.first].m_event_values[i]
+              << ") ";
+          else
+            s << (ull_t)m_kernel_data[k.first].m_event_values[i]
+              << " ";
+        }
+        printf("\n");
+      }
     }
 
     template<typename stream>
@@ -494,59 +575,67 @@ namespace detail {
       if(m_num_metrics <= 0)
         return;
 
-      for(int i = 0; i < m_num_metrics; ++i) {
-        if(print_names)
-          s << "(" << m_metric_names[i] << ",";
+      for(auto const &k: m_kernel_data) {
+        if(k.first == dummy_kernel_name)
+          continue;
 
-        /*detail::print_metric(
-                m_metric_names[i].c_str(),
-                m_metric_id[i],
-                m_metrics[i],
-                s);*/
-        if(print_names) s << ") ";
-        else s << " ";
+        printf("%s: ",
+               m_kernel_data[k.first].m_name.c_str());
+
+        for(int i = 0; i < m_num_metrics; ++i) {
+          if(print_names)
+            s << "(" << m_metric_names[i] << ",";
+
+          detail::print_metric(
+            m_metric_ids[i],
+            m_kernel_data[k.first].m_metric_values[i],
+            s);
+
+          if(print_names) s << ") ";
+          else s << " ";
+        }
+        printf("\n");
       }
-      //printf("\n");
     }
 
     std::vector<std::string> get_unique_kernel_names()
     { return m_kernel_names; }
 
-    event_val_t get_event_values(const char *kernel_name) {
+    event_val_t
+    get_event_values(const char *kernel_name) {
       if(m_num_events > 0)
-        return m_events[kernel_name];
+        return m_kernel_data[kernel_name].m_event_values;
       else
         return event_val_t{};
     }
 
     metric_val_t get_metric_values(const char *kernel_name) {
       if(m_num_metrics > 0)
-        return m_metrics[kernel_name];
+        return m_kernel_data[kernel_name].m_metric_values;
       else
         return metric_val_t{};
     }
 
   private:
     int m_device_num;
+    int m_num_metrics, m_num_events;
     const strvec_t& m_event_names;
     const strvec_t& m_metric_names;
-    int m_num_metrics, m_num_events;
-    std::map<std::string, event_val_t> m_events;
-    std::map<std::string, metric_val_t> m_metrics;
-
-    int m_metric_passes, m_event_passes;
+    std::vector<CUpti_MetricID> m_metric_ids;
+    std::vector<CUpti_EventID> m_event_ids;
 
     CUcontext m_context;
     CUdevice m_device;
     CUpti_SubscriberHandle m_subscriber;
-    std::vector<detail::pass_data_t> m_data;
+
     CUpti_EventGroupSets *m_metric_pass_data;
     CUpti_EventGroupSets *m_event_pass_data;
-    std::vector<CUpti_MetricID> m_metric_id;
-    std::vector<CUpti_EventID> m_event_id;
 
-    std::vector<detail::kernel_data_t> m_kernel_data;
+    int m_metric_passes, m_event_passes;
+    std::map<std::string,
+             detail::kernel_data_t> m_kernel_data;
     std::vector<std::string> m_kernel_names;
+    int m_num_kernels;
   };
 
 } // namespace cupti_profiler
