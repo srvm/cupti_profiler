@@ -45,7 +45,8 @@ int main() {
                                "flop_count_sp",
                                "inst_executed",
                                "gst_transactions",
-                               "gld_transactions"
+                               "gld_transactions",
+                               "shared_efficiency"
                                //"stall_memory_throttle"
                               };
 

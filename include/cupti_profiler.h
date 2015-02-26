@@ -67,16 +67,10 @@ namespace cupti_profiler {
 
 namespace detail {
 
-  // User data for event collection callback
+  // Pass-specific data
   struct pass_data_t {
-    //int total_passes;
-    // the device where metric is being collected
-    //CUdevice device;
     // the set of event groups to collect for a pass
     CUpti_EventGroupSet *event_groups;
-    // the current number of events collected in eventIdArray and
-    // eventValueArray
-    uint32_t current_event_idx;
     // the number of entries in eventIdArray and eventValueArray
     uint32_t num_events;
     // array of event ids
@@ -93,6 +87,7 @@ namespace detail {
 
     std::vector<pass_data_t> m_pass_data;
     std::string m_name;
+
     int m_metric_passes;
     int m_event_passes;
     int m_current_pass;
@@ -120,6 +115,7 @@ namespace detail {
     const char *current_kernel_name = cbInfo->symbolName;
 
     // Skip execution if kernel name is NULL string
+    // TODO: Make sure this is fine
     if(!current_kernel_name) {
       _LOG("Empty kernel name string. Skipping...");
       return;
@@ -129,6 +125,7 @@ namespace detail {
       (std::map<std::string, detail::kernel_data_t> *)userdata;
 
     if (cbInfo->callbackSite == CUPTI_API_ENTER) {
+      // If this is kernel name hasn't been seen before
       if(kernel_data->count(current_kernel_name) == 0) {
         _LOG("New kernel encountered: %s", current_kernel_name);
 
@@ -139,23 +136,6 @@ namespace detail {
         k_data.m_name = current_kernel_name;
 
         auto& pass_data = k_data.m_pass_data;
-        /*for(int i = 0; i < dummy.m_metric_passes; ++i) {
-          pass_data[i].event_groups = dummy.m_pass_data[i].event_groups;
-          pass_data[i].device = dummy.m_pass_data[i].device;
-          pass_data[i].num_events = dummy.m_pass_data[i].num_events;
-          pass_data[i].total_passes = dummy.m_pass_data[i].total_passes;
-        }
-
-        for(int i = 0; i < dummy.m_event_passes; ++i) {
-          pass_data[i + dummy.m_metric_passes].event_groups =
-            dummy.m_pass_data[i + dummy.m_metric_passes].event_groups;
-          pass_data[i + dummy.m_metric_passes].device =
-            dummy.m_pass_data[i + dummy.m_metric_passes].device;
-          pass_data[i + dummy.m_metric_passes].num_events =
-            dummy.m_pass_data[i + dummy.m_metric_passes].num_events;
-          pass_data[i + dummy.m_metric_passes].total_passes =
-            dummy.m_pass_data[i + dummy.m_metric_passes].total_passes;
-        }*/
 
         CUPTI_CALL(cuptiSetEventCollectionMode(cbInfo->context,
                    CUPTI_EVENT_COLLECTION_MODE_KERNEL));
@@ -363,6 +343,7 @@ namespace detail {
       m_metric_ids.resize(m_num_metrics);
       m_event_ids.resize(m_num_events);
 
+      // Init device, context and setup callback
       DRIVER_API_CALL(cuDeviceGet(&m_device, device_num));
       DRIVER_API_CALL(cuCtxCreate(&m_context, 0, m_device));
       CUPTI_CALL(cuptiSubscribe(&m_subscriber,
@@ -432,10 +413,7 @@ namespace detail {
           total_events += num_events;
         }
         pass_data[i].event_groups = m_metric_pass_data->sets + i;
-        //pass_data[i].device = m_device;
         pass_data[i].num_events = total_events;
-
-        //pass_data[i].total_passes = m_metric_passes + m_event_passes;
       }
 
       for(int i = 0; i < m_event_passes; ++i) {
@@ -452,11 +430,7 @@ namespace detail {
           total_events += num_events;
         }
         pass_data[i + m_metric_passes].event_groups = m_event_pass_data->sets + i;
-        //pass_data[i + m_metric_passes].device = m_device;
         pass_data[i + m_metric_passes].num_events = total_events;
-
-        /*pass_data[i + m_metric_passes].total_passes =
-          m_metric_passes + m_event_passes;*/
       }
 
       m_kernel_data[dummy_kernel_name] = dummy_data;
@@ -528,6 +502,7 @@ namespace detail {
         }
       }
 
+      // Disable callback and unsubscribe
       CUPTI_CALL(cuptiEnableCallback(0, m_subscriber,
                  CUPTI_CB_DOMAIN_RUNTIME_API,
                  CUPTI_RUNTIME_TRACE_CBID_cudaLaunch_v3020));
@@ -632,6 +607,7 @@ namespace detail {
     CUpti_EventGroupSets *m_event_pass_data;
 
     int m_metric_passes, m_event_passes;
+    // Kernel-specific (indexed by name) trace data
     std::map<std::string,
              detail::kernel_data_t> m_kernel_data;
     std::vector<std::string> m_kernel_names;
