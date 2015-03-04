@@ -473,13 +473,18 @@ namespace detail {
         }
 
         for(int i = 0; i < m_num_metrics; ++i) {
-          CUPTI_CALL(cuptiMetricGetValue(m_device,
+          CUptiResult _status = cuptiMetricGetValue(m_device,
                      m_metric_ids[i],
                      total_events * sizeof(CUpti_EventID),
                      event_ids,
                      total_events * sizeof(uint64_t),
                      event_values,
-                     0, &metric_value));
+                     0, &metric_value);
+          if(_status != CUPTI_SUCCESS) {
+            fprintf(stderr, "Metric value retrieval failed for metric %s\n",
+                    m_metric_names[i].c_str());
+            exit(-1);
+          }
           k.second.m_metric_values.push_back(metric_value);
         }
 
@@ -588,6 +593,9 @@ namespace detail {
       for(auto const& k: m_kernel_data) {
         if(k.first == dummy_kernel_name)
           continue;
+
+        //printf("New kernel: %s \n",
+        //       m_kernel_data[k.first].m_name.c_str());
 
         for(int i = 0; i < m_num_events; ++i) {
           if(print_names)
