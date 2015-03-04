@@ -511,15 +511,16 @@ namespace detail {
 
     template<typename stream>
     void print_event_values(stream& s,
-                            bool print_names=true) {
+                            bool print_names=true,
+                            const char* kernel_separator = "; ") {
       using ull_t = unsigned long long;
 
       for(auto const& k: m_kernel_data) {
         if(k.first == dummy_kernel_name)
           continue;
 
-        printf("%s: ",
-               m_kernel_data[k.first].m_name.c_str());
+        //printf("%s: ",
+        //       m_kernel_data[k.first].m_name.c_str());
 
         /*for(int i = 0; i < m_num_events; ++i) {
           printf("Event [%s] = %llu\n",
@@ -540,13 +541,15 @@ namespace detail {
             s << (ull_t)m_kernel_data[k.first].m_event_values[i]
               << " ";
         }
-        printf("\n");
+        s << kernel_separator;
       }
+      printf("\n");
     }
 
     template<typename stream>
     void print_metric_values(stream& s,
-                             bool print_names=true) {
+                             bool print_names=true,
+                             const char* kernel_separator = "; ") {
       if(m_num_metrics <= 0)
         return;
 
@@ -554,8 +557,8 @@ namespace detail {
         if(k.first == dummy_kernel_name)
           continue;
 
-        printf("%s: ",
-               m_kernel_data[k.first].m_name.c_str());
+        //printf("%s: ",
+        //       m_kernel_data[k.first].m_name.c_str());
 
         for(int i = 0; i < m_num_metrics; ++i) {
           if(print_names)
@@ -569,8 +572,49 @@ namespace detail {
           if(print_names) s << ") ";
           else s << " ";
         }
-        printf("\n");
+        s << kernel_separator;
       }
+      printf("\n");
+    }
+
+    template<typename stream>
+    void print_events_and_metrics(stream& s,
+                                  bool print_names = true,
+                                  const char* kernel_separator = "; ") {
+      if(m_num_events <= 0 && m_num_metrics <= 0)
+        return;
+
+      using ull_t = unsigned long long;
+      for(auto const& k: m_kernel_data) {
+        if(k.first == dummy_kernel_name)
+          continue;
+
+        for(int i = 0; i < m_num_events; ++i) {
+          if(print_names)
+            s << "(" << m_event_names[i] << ","
+              << (ull_t)m_kernel_data[k.first].m_event_values[i]
+              << ") ";
+          else
+            s << (ull_t)m_kernel_data[k.first].m_event_values[i]
+              << " ";
+        }
+
+        for(int i = 0; i < m_num_metrics; ++i) {
+          if(print_names)
+            s << "(" << m_metric_names[i] << ",";
+
+          detail::print_metric(
+            m_metric_ids[i],
+            m_kernel_data[k.first].m_metric_values[i],
+            s);
+
+          if(print_names) s << ") ";
+          else s << " ";
+        }
+
+        s << kernel_separator;
+      }
+      printf("\n");
     }
 
     std::vector<std::string> get_kernel_names() {
