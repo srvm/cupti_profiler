@@ -40,7 +40,7 @@ do {                                                                           \
     }                                                                   \
   } while (0)
 
-#ifndef NDEBUG
+#ifdef DEBUG
   template<typename... Args>
   void _LOG(const char *msg, Args&&... args) {
     fprintf(stderr, "[Log]: ");
