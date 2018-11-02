@@ -107,7 +107,7 @@ namespace detail {
 
     // This callback is enabled only for launch so we shouldn't see
     // anything else.
-    if (cbid != CUPTI_RUNTIME_TRACE_CBID_cudaLaunch_v3020) {
+    if ((cbid != CUPTI_RUNTIME_TRACE_CBID_cudaLaunch_v3020) && (cbid != CUPTI_RUNTIME_TRACE_CBID_cudaLaunchKernel_v7000)) {
       fprintf(stderr, "%s:%d: Unexpected cbid %d\n", __FILE__, __LINE__, cbid);
       exit(-1);
     }
@@ -352,6 +352,9 @@ namespace detail {
       CUPTI_CALL(cuptiEnableCallback(1, m_subscriber,
                  CUPTI_CB_DOMAIN_RUNTIME_API,
                  CUPTI_RUNTIME_TRACE_CBID_cudaLaunch_v3020));
+      CUPTI_CALL(cuptiEnableCallback(1, m_subscriber,
+                 CUPTI_CB_DOMAIN_RUNTIME_API,
+                 CUPTI_RUNTIME_TRACE_CBID_cudaLaunchKernel_v7000));
 
       CUpti_MetricID metric_ids[m_num_metrics];
       for(int i = 0; i < m_num_metrics; ++i) {
@@ -511,6 +514,9 @@ namespace detail {
       CUPTI_CALL(cuptiEnableCallback(0, m_subscriber,
                  CUPTI_CB_DOMAIN_RUNTIME_API,
                  CUPTI_RUNTIME_TRACE_CBID_cudaLaunch_v3020));
+      CUPTI_CALL(cuptiEnableCallback(0, m_subscriber,
+                 CUPTI_CB_DOMAIN_RUNTIME_API,
+                 CUPTI_RUNTIME_TRACE_CBID_cudaLaunchKernel_v7000));
       CUPTI_CALL(cuptiUnsubscribe(m_subscriber));
     }
 
