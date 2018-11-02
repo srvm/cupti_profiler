@@ -35,18 +35,23 @@ int main() {
 
   vector<string> event_names {
                               "active_warps",
-                              "gst_inst_32bit",
+                              //"gst_inst_32bit",   // not supported on GV100
                               "active_cycles",
-                              "threads_launched",
-                              "branch"
+                              //"threads_launched", // not supported on GV100
+                              //"branch"
                              };
   vector<string> metric_names {
-                               "flop_count_dp",
-                               "flop_count_sp",
-                               "inst_executed",
-                               "gst_transactions",
-                               "gld_transactions",
-                               "shared_efficiency"
+                               //"flop_count_dp",
+                               //"flop_count_sp",
+                               //"inst_executed",
+                               //"gst_transactions",
+                               //"gld_transactions",
+                               //"shared_efficiency",
+                               "inst_per_warp",
+                               "branch_efficiency",
+                               "warp_execution_efficiency",
+                               "warp_nonpred_execution_efficiency",
+                               "inst_replay_overhead",
                                //"stall_memory_throttle"
                               };
 
