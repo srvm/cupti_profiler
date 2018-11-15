@@ -107,7 +107,8 @@ namespace detail {
 
     // This callback is enabled only for launch so we shouldn't see
     // anything else.
-    if ((cbid != CUPTI_RUNTIME_TRACE_CBID_cudaLaunch_v3020) && (cbid != CUPTI_RUNTIME_TRACE_CBID_cudaLaunchKernel_v7000)) {
+    if ((cbid != CUPTI_RUNTIME_TRACE_CBID_cudaLaunch_v3020)
+        && (cbid != CUPTI_RUNTIME_TRACE_CBID_cudaLaunchKernel_v7000)) {
       fprintf(stderr, "%s:%d: Unexpected cbid %d\n", __FILE__, __LINE__, cbid);
       exit(-1);
     }
@@ -165,7 +166,9 @@ namespace detail {
         CUPTI_CALL(cuptiSetEventCollectionMode(cbInfo->context,
               CUPTI_EVENT_COLLECTION_MODE_KERNEL));
 
-        for (int i = 0; i < pass_data[current_pass].event_groups->numEventGroups; i++) {
+        for (int i = 0;
+             i < pass_data[current_pass].event_groups->numEventGroups;
+             i++) {
           _LOG("  Enabling group %d", i);
           uint32_t all = 1;
           CUPTI_CALL(cuptiEventGroupSetAttribute(
@@ -246,8 +249,10 @@ namespace detail {
           {
             char eventName[128];
             size_t eventNameSize = sizeof(eventName) - 1;
-            CUPTI_CALL(cuptiEventGetAttribute(eventIds[j], CUPTI_EVENT_ATTR_NAME,
-                       &eventNameSize, eventName));
+            CUPTI_CALL(cuptiEventGetAttribute(eventIds[j],
+                       CUPTI_EVENT_ATTR_NAME,
+                       &eventNameSize,
+                       eventName));
             eventName[127] = '\0';
             _DBG("\t%s = %llu (", eventName, (unsigned long long)sum);
             if (numInstances > 1) {
@@ -266,6 +271,7 @@ namespace detail {
           }
         }
         free(values);
+        free(eventIds);
       }
 
       for (int i = 0;
@@ -333,7 +339,6 @@ namespace detail {
       int device_count = 0;
 
       CUPTI_CALL(cuptiActivityEnable(CUPTI_ACTIVITY_KIND_KERNEL));
-      DRIVER_API_CALL(cuInit(0));
       DRIVER_API_CALL(cuDeviceGetCount(&device_count));
       if (device_count == 0) {
         fprintf(stderr, "There is no device supporting CUDA.\n");
@@ -356,13 +361,16 @@ namespace detail {
                  CUPTI_CB_DOMAIN_RUNTIME_API,
                  CUPTI_RUNTIME_TRACE_CBID_cudaLaunchKernel_v7000));
 
-      CUpti_MetricID metric_ids[m_num_metrics];
+      CUpti_MetricID *metric_ids =
+        (CUpti_MetricID*)calloc(sizeof(CUpti_MetricID), m_num_metrics);
       for(int i = 0; i < m_num_metrics; ++i) {
         CUPTI_CALL(cuptiMetricGetIdFromName(m_device,
                    m_metric_names[i].c_str(),
                    &metric_ids[i]));
       }
-      CUpti_EventID event_ids[m_num_events];
+
+      CUpti_EventID *event_ids =
+        (CUpti_EventID*)calloc(sizeof(CUpti_EventID), m_num_events);
       for(int i = 0; i < m_num_events; ++i) {
         CUPTI_CALL(cuptiEventGetIdFromName(m_device,
                    m_event_names[i].c_str(),
@@ -370,8 +378,9 @@ namespace detail {
       }
 
       if(m_num_metrics > 0) {
+
         CUPTI_CALL(cuptiMetricCreateEventGroupSets(m_context,
-                   sizeof(metric_ids), metric_ids,
+                   sizeof(CUpti_MetricID) * m_num_metrics, metric_ids,
                    &m_metric_pass_data));
         m_metric_passes = m_metric_pass_data->numSets;
 
@@ -380,7 +389,7 @@ namespace detail {
       }
       if(m_num_events > 0) {
         CUPTI_CALL(cuptiEventGroupSetsCreate(m_context,
-                   sizeof(event_ids), event_ids,
+                   sizeof(CUpti_EventID) * m_num_events, event_ids,
                    &m_event_pass_data));
         m_event_passes = m_event_pass_data->numSets;
 
@@ -432,11 +441,14 @@ namespace detail {
           _LOG("  Event Group %d, #Events = %d", j, num_events);
           total_events += num_events;
         }
-        pass_data[i + m_metric_passes].event_groups = m_event_pass_data->sets + i;
+        pass_data[i + m_metric_passes].event_groups =
+          m_event_pass_data->sets + i;
         pass_data[i + m_metric_passes].num_events = total_events;
       }
 
       m_kernel_data[dummy_kernel_name] = dummy_data;
+      free(metric_ids);
+      free(event_ids);
     }
 
     ~profiler() {
@@ -679,5 +691,94 @@ namespace detail {
     std::vector<std::string> m_kernel_names;
     int m_num_kernels;
   };
+
+#ifndef __CUPTI_PROFILER_NAME_SHORT
+  #define __CUPTI_PROFILER_NAME_SHORT 128
+#endif
+
+std::vector<std::string> available_metrics(CUdevice device) {
+  std::vector<std::string> metric_names;
+  uint32_t numMetric;
+  size_t size;
+  char metricName[__CUPTI_PROFILER_NAME_SHORT];
+  CUpti_MetricValueKind metricKind;
+  CUpti_MetricID *metricIdArray;
+
+  CUPTI_CALL(cuptiDeviceGetNumMetrics(device, &numMetric));
+  size = sizeof(CUpti_MetricID) * numMetric;
+  metricIdArray = (CUpti_MetricID*) malloc(size);
+  if(NULL == metricIdArray) {
+    printf("Memory could not be allocated for metric array");
+    exit(-1);
+  }
+
+  CUPTI_CALL(cuptiDeviceEnumMetrics(device, &size, metricIdArray));
+
+  for (int i = 0; i < numMetric; i++) {
+    size = __CUPTI_PROFILER_NAME_SHORT;
+    CUPTI_CALL(cuptiMetricGetAttribute(metricIdArray[i],
+               CUPTI_METRIC_ATTR_NAME, &size, (void *)& metricName));
+    size = sizeof(CUpti_MetricValueKind);
+    CUPTI_CALL(cuptiMetricGetAttribute(metricIdArray[i],
+               CUPTI_METRIC_ATTR_VALUE_KIND, &size, (void *)& metricKind));
+    if ((metricKind == CUPTI_METRIC_VALUE_KIND_THROUGHPUT)
+        || (metricKind == CUPTI_METRIC_VALUE_KIND_UTILIZATION_LEVEL)) {
+        printf("Metric %s cannot be profiled as metric requires GPU"
+               "time duration for kernel run.\n", metricName);
+    } else {
+        metric_names.push_back(metricName);
+    }
+  }
+  free(metricIdArray);
+  return std::move(metric_names);
+}
+
+std::vector<std::string> available_events(CUdevice device) {
+  std::vector<std::string> event_names;
+  uint32_t numDomains = 0, numEvents = 0, totalEvents = 0;
+  size_t size;
+  CUpti_EventDomainID* domainIdArray;
+  CUpti_EventID *eventIdArray;
+  size_t eventIdArraySize;
+  char eventName[__CUPTI_PROFILER_NAME_SHORT];
+
+  CUPTI_CALL(cuptiDeviceGetNumEventDomains(device, &numDomains));
+  size = sizeof(CUpti_EventDomainID) * numDomains;
+  domainIdArray = (CUpti_EventDomainID*) malloc(size);
+  if(NULL == domainIdArray) {
+    printf("Memory could not be allocated for domain array");
+    exit(-1);
+  }
+  CUPTI_CALL(cuptiDeviceEnumEventDomains(device, &size, domainIdArray));
+
+  for (int i = 0; i < numDomains; i++) {
+    CUPTI_CALL(cuptiEventDomainGetNumEvents(domainIdArray[i], &numEvents));
+    totalEvents += numEvents;
+  }
+
+  eventIdArraySize    = sizeof(CUpti_EventID) * totalEvents;
+  eventIdArray        = (CUpti_EventID *) malloc(eventIdArraySize);
+
+  totalEvents = 0;
+  for (int i = 0; i < numDomains; i++) {
+    // Query num of events available in the domain
+    CUPTI_CALL(cuptiEventDomainGetNumEvents(domainIdArray[i], &numEvents));
+    size = numEvents * sizeof(CUpti_EventID);
+    CUPTI_CALL(
+      cuptiEventDomainEnumEvents(domainIdArray[i], &size,
+                                 eventIdArray + totalEvents));
+    totalEvents += numEvents;
+  }
+
+  for (int i = 0; i < totalEvents; i++) {
+    size = __CUPTI_PROFILER_NAME_SHORT;
+    CUPTI_CALL(cuptiEventGetAttribute(eventIdArray[i],
+               CUPTI_EVENT_ATTR_NAME, &size, eventName));
+    event_names.push_back(eventName);
+  }
+  free(domainIdArray);
+  free(eventIdArray);
+  return std::move(event_names);
+}
 
 } // namespace cupti_profiler
